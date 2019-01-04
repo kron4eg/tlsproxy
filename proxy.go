@@ -121,7 +121,7 @@ func verifyClientCert(cfg Config) func(rawCerts [][]byte, _ [][]*x509.Certificat
 			}
 
 			if cfg.RequireClientName != "" {
-				if err = cert.VerifyHostname("prometheus-client"); err != nil {
+				if err = cert.VerifyHostname(cfg.RequireClientName); err != nil {
 					return err
 				}
 			}
