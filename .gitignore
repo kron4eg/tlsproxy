@@ -1,2 +1,3 @@
-/pki/*.pem
-/pki/*.csr
+*.pem
+*.csr
+/tlsproxy
