@@ -1,4 +1,5 @@
 {
+  "listen": ":9101",
   "require_client_name": "prometheus-client",
   "tls": {
     "ca": "ca.pem",
