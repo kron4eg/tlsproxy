@@ -1,7 +1,7 @@
 {
     "hosts": [
-        "nep.example.net",
-        "127.0.0.1"
+        "node.example.net",
+        "blackbox.example.net"
     ],
     "key": {
         "algo": "ecdsa",
