@@ -16,10 +16,10 @@ import (
 
 // Config hold configuration
 type Config struct {
-	Listen            string    `json:"listen"`
-	RequireClientName string    `json:"require_client_name"`
-	TLS               TLSConfig `json:"tls"`
-	ProxyPass         string    `json:"proxy_pass"`
+	Listen             string            `json:"listen"`
+	RequiredClientName string            `json:"required_client_name"`
+	TLS                TLSConfig         `json:"tls"`
+	VHosts             map[string]string `json:"vhosts"`
 }
 
 // TLSConfig hold TLS configuration
@@ -32,12 +32,14 @@ type TLSConfig struct {
 // NewConfig initialize Config with default values
 func NewConfig() Config {
 	return Config{
-		Listen:    ":9101",
-		ProxyPass: "http://127.0.0.1:9100",
+		Listen: ":9101",
 		TLS: TLSConfig{
 			CA:   "ca.pem",
 			Cert: "server.pem",
 			Key:  "server-key.pem",
+		},
+		VHosts: map[string]string{
+			"": "http://127.0.0.1:9100",
 		},
 	}
 }
@@ -54,13 +56,6 @@ func main() {
 
 	cfg := NewConfig()
 
-	if genConfigFlag {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		enc.Encode(cfg)
-		os.Exit(0)
-	}
-
 	if configFileFlag != "" {
 		buf, err := ioutil.ReadFile(configFileFlag)
 		if err != nil {
@@ -72,33 +67,48 @@ func main() {
 		}
 	}
 
-	rpURL, err := url.Parse(cfg.ProxyPass)
+	if genConfigFlag {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(cfg)
+		os.Exit(0)
+	}
+
+	vhostsMap := map[string]http.Handler{}
+
+	for vhost, upstream := range cfg.VHosts {
+		rpURL, err := url.Parse(upstream)
+		if err != nil {
+			log.Fatal(err)
+		}
+		rp := httputil.NewSingleHostReverseProxy(rpURL)
+		vhostsMap[vhost] = rp
+	}
+
+	caPem, err := ioutil.ReadFile(cfg.TLS.CA)
 	if err != nil {
 		log.Fatal(err)
 	}
-	rp := httputil.NewSingleHostReverseProxy(rpURL)
 
-	promCApem, err := ioutil.ReadFile(cfg.TLS.CA)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	promCAPool := x509.NewCertPool()
-	if ok := promCAPool.AppendCertsFromPEM(promCApem); !ok {
+	caPool := x509.NewCertPool()
+	if ok := caPool.AppendCertsFromPEM(caPem); !ok {
 		log.Fatal("can't add cert to client CA pool")
 	}
 
 	srv := http.Server{
 		Addr:              cfg.Listen,
-		Handler:           rp,
+		Handler:           VHostRouter(vhostsMap),
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 1 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		TLSConfig: &tls.Config{
-			ClientAuth:            tls.RequireAndVerifyClientCert,
-			ClientCAs:             promCAPool,
-			VerifyPeerCertificate: verifyClientCert(cfg),
+			ClientAuth: tls.RequireAndVerifyClientCert,
+			ClientCAs:  caPool,
 		},
+	}
+
+	if cfg.RequiredClientName != "" {
+		srv.TLSConfig.VerifyPeerCertificate = verifyClientCert(cfg)
 	}
 
 	log.Printf("listen on %s", cfg.Listen)
@@ -110,22 +120,23 @@ func main() {
 
 func verifyClientCert(cfg Config) func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-		for _, asnData := range rawCerts {
-			cert, err := x509.ParseCertificate(asnData)
-			if err != nil {
-				return err
-			}
-
-			if cert.IsCA {
-				continue
-			}
-
-			if cfg.RequireClientName != "" {
-				if err = cert.VerifyHostname(cfg.RequireClientName); err != nil {
-					return err
-				}
-			}
+		asnData := rawCerts[0]
+		cert, err := x509.ParseCertificate(asnData)
+		if err != nil {
+			return err
 		}
-		return nil
+
+		return cert.VerifyHostname(cfg.RequiredClientName)
 	}
+}
+
+// VHostRouter router
+func VHostRouter(vhosts map[string]http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next, ok := vhosts[r.Host]
+		if !ok {
+			next, _ = vhosts[""]
+		}
+		next.ServeHTTP(w, r)
+	})
 }
