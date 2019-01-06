@@ -10,35 +10,16 @@ run: build server-cert
 	../tlsproxy
 
 .PHONY: initca
-initca: pki/ca.pem
+initca:
+	$(MAKE) -C ./pki initca
 
 .PHONY: server-cert
-server-cert: pki/server.pem
+server-cert:
+	$(MAKE) -C ./pki server-cert
 
 .PHONY: client-cert
-client-cert: pki/client.pem
-
-pki/ca.pem:
-	cfssl gencert -initca pki/ca-csr.json | cfssljson -bare pki/ca
-
-pki/server.pem: pki/ca.pem
-	cfssl gencert \
-		-ca=pki/ca.pem \
-		-ca-key=pki/ca-key.pem \
-		-config=pki/ca-config.json \
-		-profile=server \
-		pki/server.json | \
-			cfssljson -bare pki/server
-
-pki/client.pem: pki/ca.pem
-	cfssl gencert \
-		-ca=pki/ca.pem \
-		-ca-key=pki/ca-key.pem \
-		-config=pki/ca-config.json \
-		-profile=client \
-		pki/client.json | \
-			cfssljson -bare pki/client
+client-cert:
+	$(MAKE) -C ./pki client-cert
 
 clean:
-	rm -f pki/*.pem
-	rm -f pki/*.csr
+	$(MAKE) -C ./pki clean
