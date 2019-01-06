@@ -34,7 +34,7 @@ type TLSConfig struct {
 // NewConfig initialize Config with default values
 func NewConfig() Config {
 	return Config{
-		Listen: ":9101",
+		Listen: ":19100",
 		TLS: TLSConfig{
 			CA:   "ca.pem",
 			Cert: "server.pem",

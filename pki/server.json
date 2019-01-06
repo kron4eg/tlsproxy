@@ -1,8 +1,8 @@
 {
     "hosts": [
         "127.0.0.1",
-        "node.example.net",
-        "blackbox.example.net"
+        "srv1.node.exporters.example.net",
+        "srv1.blackbox.exporters.example.net"
     ],
     "key": {
         "algo": "ecdsa",
