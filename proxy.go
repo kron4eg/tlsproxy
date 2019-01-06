@@ -5,8 +5,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -16,10 +18,10 @@ import (
 
 // Config hold configuration
 type Config struct {
-	Listen             string            `json:"listen"`
-	RequiredClientName string            `json:"required_client_name"`
-	TLS                TLSConfig         `json:"tls"`
-	VHosts             map[string]string `json:"vhosts"`
+	Listen             string         `json:"listen"`
+	RequiredClientName string         `json:"required_client_name"`
+	TLS                TLSConfig      `json:"tls"`
+	VHosts             map[string]int `json:"vhosts"`
 }
 
 // TLSConfig hold TLS configuration
@@ -38,8 +40,8 @@ func NewConfig() Config {
 			Cert: "server.pem",
 			Key:  "server-key.pem",
 		},
-		VHosts: map[string]string{
-			"": "http://127.0.0.1:9100",
+		VHosts: map[string]int{
+			"": 9100,
 		},
 	}
 }
@@ -76,12 +78,26 @@ func main() {
 
 	vhostsMap := map[string]http.Handler{}
 
-	for vhost, upstream := range cfg.VHosts {
-		rpURL, err := url.Parse(upstream)
+	for vhost, upstreamPort := range cfg.VHosts {
+		rpURL, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", upstreamPort))
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		rp := httputil.NewSingleHostReverseProxy(rpURL)
+		rp.Transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+				DualStack: true,
+			}).DialContext,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+		}
 		vhostsMap[vhost] = rp
 	}
 
